@@ -16,6 +16,9 @@ class Products with ChangeNotifier {
     //       'https://cdn.pixabay.com/photo/2016/10/02/22/17/red-t-shirt-1710578_1280.jpg',
     // ),
   ];
+  final String authToken;
+  final String userId;
+  Products(this.authToken, this.userId, this._items);
   List<Product> get items {
     // if (_showFavoritesOnly) {
     //   return _items.where((prodItem) => prodItem.isFavorite).toList();
@@ -40,20 +43,35 @@ class Products with ChangeNotifier {
   //   _showFavoritesOnly = false;
   //   notifyListeners();
   // }
-  Future<void> fetchAndSetProduct() async {
-    const url = 'https://banded-nuance-280512.firebaseio.com/products.json';
+  Future<void> fetchAndSetProduct([bool filterByUser = false]) async {
+    final filterString =
+        filterByUser ? 'orderBy="creatorId"&equalTo="$userId"' : '';
+    var url =
+        'https://banded-nuance-280512.firebaseio.com/products.json?auth=$authToken&$filterString';
     try {
       final response = await http.get(url);
       final extractedData = json.decode(response.body) as Map<String, dynamic>;
+      if (extractedData == null) {
+        return;
+      }
+      url =
+          'https://banded-nuance-280512.firebaseio.com/userFavorites/$userId.json?auth=$authToken';
+      final favoriteResponse = await http.get(url);
+      final favoriteData = json.decode(favoriteResponse.body);
+
       final List<Product> loadedProducts = [];
       extractedData.forEach((prodId, prodData) {
-        loadedProducts.add(Product(
+        loadedProducts.add(
+          Product(
             id: prodId,
             title: prodData['title'],
             description: prodData['description'],
             price: prodData['price'],
-            isFavorite: prodData['isFavorite'],
-            imageUrl: prodData['imageUrl']));
+            isFavorite:
+                favoriteData == null ? false : favoriteData[prodId] ?? false,
+            imageUrl: prodData['imageUrl'],
+          ),
+        );
       });
       _items = loadedProducts;
       notifyListeners();
@@ -63,7 +81,8 @@ class Products with ChangeNotifier {
   }
 
   Future<void> addProduct(Product product) async {
-    const url = 'https://banded-nuance-280512.firebaseio.com/products.json';
+    final url =
+        'https://banded-nuance-280512.firebaseio.com/products.json?auth=$authToken';
     try {
       final response = await http.post(
         url,
@@ -72,8 +91,8 @@ class Products with ChangeNotifier {
           'description': product.description,
           'imageurl': product.imageUrl,
           'price': product.price,
-          'isFavorite': product.isFavorite,
-          'imageUrl': product.imageUrl
+          'imageUrl': product.imageUrl,
+          'creatorId': userId,
         }),
       );
       final newProduct = Product(
@@ -98,7 +117,7 @@ class Products with ChangeNotifier {
     final prodIndex = _items.indexWhere((prod) => prod.id == id);
     if (prodIndex >= 0) {
       final url =
-          'https://banded-nuance-280512.firebaseio.com/products/$id.json';
+          'https://banded-nuance-280512.firebaseio.com/products/$id.json?auth=$authToken';
       await http.patch(url,
           body: json.encode({
             'title': newProduct.title,
@@ -116,7 +135,8 @@ class Products with ChangeNotifier {
   }
 
   Future<void> deleteProduct(String id) async {
-    final url = 'https://banded-nuance-280512.firebaseio.com/products/$id.json';
+    final url =
+        'https://banded-nuance-280512.firebaseio.com/products/$id.json?auth=$authToken';
     final existingProductIndex = _items.indexWhere((prod) => prod.id == id);
     var existingProduct = _items[existingProductIndex];
     final response = await http.delete(url);
